@@ -1,0 +1,5 @@
+import { Eye } from "lucide-react";
+import type { SecurityEvent } from "../../types/event";
+import { formatDate } from "../../utils/formatDate";
+import { SeverityBadge, TelegramBadge } from "../common/StatusBadge";
+export function EventRow({ event, onView }: { event: SecurityEvent; onView: (id: string) => void }) { return <tr className="border-t border-slate-800 text-sm text-slate-300"><td className="whitespace-nowrap px-4 py-3">{formatDate(event.timestamp)}</td><td className="px-4 py-3"><p className="font-medium text-slate-100">{event.event_type}</p><p className="max-w-xs truncate text-xs text-slate-500">{event.message}</p></td><td className="px-4 py-3">{event.source_ip}</td><td className="px-4 py-3"><SeverityBadge severity={event.severity}/></td><td className="px-4 py-3"><TelegramBadge sent={event.telegram_sent} error={event.telegram_error}/></td><td className="px-4 py-3"><button onClick={() => onView(event.event_id)} className="rounded p-1 text-cyan-300 hover:bg-slate-800" aria-label="View event"><Eye size={17}/></button></td></tr>; }

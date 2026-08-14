@@ -1,0 +1,1 @@
+export function ErrorState({ onRetry }: { onRetry: () => void }) { return <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-5 text-center text-sm text-red-200">Unable to connect to backend.<button onClick={onRetry} className="ml-3 text-red-100 underline">Retry</button></div>; }

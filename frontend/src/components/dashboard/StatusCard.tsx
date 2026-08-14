@@ -1,0 +1,2 @@
+import type { ReactNode } from "react";
+export function StatusCard({ title, status, subtitle, icon }: { title: string; status: string; subtitle?: string; icon: ReactNode }) { return <article className="rounded-xl border border-slate-800 bg-slate-900 p-5"><div className="mb-5 flex items-center justify-between text-slate-400"><span className="text-xs font-semibold tracking-wider">{title}</span>{icon}</div><p className="text-base font-semibold text-slate-100">{status}</p>{subtitle && <p className="mt-1 truncate text-sm text-slate-400">{subtitle}</p>}</article>; }

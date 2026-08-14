@@ -1,0 +1,6 @@
+import { LayoutDashboard, List, Server, Shield } from "lucide-react";
+import { NavLink } from "react-router-dom";
+import type { SystemStatus } from "../../types/status";
+
+const navClass = ({ isActive }: { isActive: boolean }) => `flex items-center gap-3 rounded-md px-3 py-2 text-sm ${isActive ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900 hover:text-white"}`;
+export function Sidebar({ status }: { status?: SystemStatus }) { return <aside className="flex w-full shrink-0 flex-col border-b border-slate-800 bg-slate-950 p-4 lg:min-h-screen lg:w-64 lg:border-b-0 lg:border-r"><div className="mb-7 flex items-center gap-2 px-2 text-sm font-bold tracking-wide text-white"><Shield className="text-cyan-400" size={20}/>ASA CONFIG MONITOR</div><nav className="flex gap-2 lg:block lg:space-y-2"><NavLink to="/dashboard" className={navClass}><LayoutDashboard size={17}/>Dashboard</NavLink><NavLink to="/events" className={navClass}><List size={17}/>Events</NavLink></nav><div className="mt-auto hidden border-t border-slate-800 pt-5 text-xs text-slate-400 lg:block"><p className="mb-3 flex gap-2"><Shield size={14}/> ASA <span className="text-slate-200">{status?.asa_ip ?? "—"}</span></p><p className="flex gap-2"><Server size={14}/> Graylog <span className="truncate text-slate-200">{status?.graylog_url ?? "—"}</span></p></div></aside>; }

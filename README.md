@@ -1,55 +1,69 @@
 # ASA Config Monitor
 
-A small FastAPI MVP that polls Graylog for Cisco ASA (`ASA_IP`) logs, detects likely configuration changes, persists deduplicated events in SQLite, optionally alerts Telegram, and exposes a live dashboard.
+MVP theo dõi thay đổi cấu hình Cisco ASA.
+
+```text
+Cisco ASA → Syslog → Graylog → FastAPI → SQLite / Telegram
+                                      ↓ REST API
+                               React + Vite + Tailwind
+```
 
 ## Architecture
 
-`ASA → Syslog → Graylog → Graylog REST API → FastAPI → SQLite / Telegram / Dashboard`.
+- `backend/`: FastAPI, Graylog polling, detector, SQLite, Telegram và tests.
+- `frontend/`: React 19, TypeScript, Vite, TailwindCSS, Axios, React Router, TanStack Query và Lucide icons.
+- Trong Docker, Nginx của frontend phục vụ SPA tại cổng `5173` và proxy `/api/*` đến `backend:8000`.
 
-The application never connects directly to the ASA. ASA-to-Graylog syslog forwarding must already exist; this application only needs network access to the Graylog REST API.
+Frontend không bao giờ kết nối trực tiếp tới ASA hoặc Graylog; chỉ gọi FastAPI API.
 
-## Install and run
+## Development
 
-```bash
-cp .env.example .env
+Backend:
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+Set-Location backend
 python -m venv .venv
-source .venv/bin/activate
+.venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8000
 ```
 
-Windows activation: `.venv\Scripts\activate`. Open http://localhost:8000, Swagger at http://localhost:8000/docs, then run `pytest`.
+Linux/macOS activation: `source .venv/bin/activate`.
 
-For a safe demo without Graylog, set `MOCK_GRAYLOG=true` and `ENABLE_TELEGRAM=false` in `.env`. The mock emits one ASA configuration event; reload the page after a poll.
+Frontend (terminal khác):
 
-## Configuration
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-All configuration is in `.env` (do not commit it). Set `GRAYLOG_URL`, credentials where required, `ASA_IP`, `GRAYLOG_SEARCH_QUERY`, and Telegram token/chat ID. `GRAYLOG_SEARCH_ENDPOINT` defaults to Graylog's legacy universal relative search endpoint; change it for your Graylog version and adjust `GraylogClient._normalize` if its response differs.
-
-The query narrows logs at Graylog, while `ConfigChangeDetector` makes the independent content decision using editable regex patterns in `app/services/detector.py`. Only messages whose normalized `source` exactly matches `ASA_IP` are processed. On startup a short `INITIAL_LOOKBACK_SECONDS` window is used; later polls overlap slightly and SQLite fingerprints prevent duplicates.
-
-## Telegram
-
-Create a bot through BotFather, start a chat with it, obtain its token and chat ID, set both values in `.env`, then use **Test Telegram** on the dashboard. Failures are saved on the event and never stop polling.
+Mở http://localhost:5173. Vite proxy các request `/api` tới `http://localhost:8000`; Swagger vẫn ở http://localhost:8000/docs. Để demo không cần thiết bị thật, đặt `MOCK_GRAYLOG=true` và `ENABLE_TELEGRAM=false` trong `backend/.env`.
 
 ## Docker
 
 ```bash
-cp .env.example .env
+cp backend/.env.example backend/.env
 docker compose build
 docker compose up -d
+docker compose ps
 ```
 
-The container must be able to reach `http://192.168.10.10:9000`; test from its network with `curl http://192.168.10.10:9000/api/system` (or the endpoint appropriate to your Graylog release).
+Mở http://localhost:5173. Kiểm tra Nginx-to-FastAPI proxy tại `http://localhost:5173/api/status`; backend docs (được expose để debug) ở http://localhost:8000/docs.
 
-## Demo and troubleshooting
+Docker frontend phải proxy tới `backend:8000`, không phải `localhost:8000`. Backend container cần route/firewall phù hợp để đến `http://192.168.10.10:9000`.
 
-1. ASA emits a configuration syslog event to Graylog.
-2. FastAPI polls Graylog, filters the ASA source and detects it.
-3. It saves the event, attempts Telegram, and the dashboard refreshes within five seconds.
+## Testing and troubleshooting
 
-If Graylog is down, FastAPI remains up and dashboard status becomes `disconnected`; it retries automatically. If Docker cannot reach Graylog, verify routing/firewall rules between the container host and `192.168.10.10:9000`.
+```bash
+cd backend && pytest
+cd frontend && npm run build
+```
 
-## Limits and next steps
+- Frontend không gọi được backend: kiểm tra backend cổng 8000, Vite proxy và `CORS_ORIGINS` (mặc định `http://localhost:5173`).
+- Docker frontend không gọi được backend: kiểm tra `frontend/nginx.conf`, đặc biệt upstream `backend:8000`.
+- Graylog không kết nối: kiểm tra URL, API endpoint phù hợp version Graylog, routing/firewall tới `192.168.10.10:9000`.
+- Telegram lỗi: kiểm tra `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID`.
 
-This is an MVP: Graylog endpoint/normalization and detector patterns must be tuned using actual ASA logs. It has no authentication, migration framework, retries for failed Telegram delivery, or production-scale queueing. Real log samples are the key input for refining detection rules and source-field normalization.
+`ConfigChangeDetector` tại `backend/app/services/detector.py` cần được tinh chỉnh bằng log ASA thực tế. Khi Graylog hoặc Telegram lỗi, FastAPI vẫn chạy và polling tiếp tục; fingerprint trong SQLite chặn alert trùng lặp.
