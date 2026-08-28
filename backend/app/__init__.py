@@ -1,1 +1,1 @@
-"""ASA configuration change monitor."""
+"""Firewall configuration change monitor."""

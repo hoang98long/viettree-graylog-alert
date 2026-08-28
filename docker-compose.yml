@@ -2,7 +2,7 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: asa-monitor-backend
+    container_name: firewall-monitor-backend
     ports:
       - "8000:8000"
     env_file:
@@ -19,7 +19,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    container_name: asa-monitor-frontend
+    container_name: firewall-monitor-frontend
     depends_on:
       - backend
     ports:

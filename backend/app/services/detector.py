@@ -10,7 +10,7 @@ class DetectionResult:
 
 
 class ConfigChangeDetector:
-    """Editable ASA-oriented patterns; tune these with real Graylog samples."""
+    """Editable vendor-neutral patterns; tune these with real firewall logs."""
     patterns = (
         r"\bconfigured\b", r"\bconfiguration(?:\s+change)?\b", r"\bconfig\s+change\b",
         r"\bexecuted\s+(?:the\s+)?command\b", r"\bcommand\s+execut(?:ed|ion)\b",

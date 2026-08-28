@@ -5,5 +5,5 @@ def test_detect_configuration_change(): assert ConfigChangeDetector().detect('Us
 def test_ignore_normal_log(): assert not ConfigChangeDetector().detect('Interface GigabitEthernet0/1 is up').detected
 
 def test_duplicate_event():
-    event = {'timestamp': '2026-08-14T08:15:32Z', 'source': '192.168.1.1', 'message': 'User admin executed the command'}
+    event = {'timestamp': '2026-08-14T08:15:32Z', 'source': '192.168.1.1', 'message': 'Administrator executed the configuration command'}
     assert MonitorService.fingerprint_for(event) == MonitorService.fingerprint_for(event)

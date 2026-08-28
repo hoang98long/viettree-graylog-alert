@@ -46,8 +46,6 @@ class MonitorService:
             logger.warning("Graylog polling failed: %s", exc)
 
     async def _process(self, item: dict) -> None:
-        if item.get("source") != self.settings.asa_ip:
-            return
         result = self.detector.detect(item.get("message", ""))
         if not result.detected:
             return
@@ -84,4 +82,4 @@ class MonitorService:
         with SessionLocal() as db:
             today = datetime.now(timezone.utc).date()
             count = db.scalar(select(func.count()).select_from(SecurityEvent).where(SecurityEvent.timestamp >= datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc))) or 0
-        return {"graylog": self.graylog_status, "telegram": "configured" if self.telegram.configured else "not configured", "asa_ip": self.settings.asa_ip, "graylog_url": self.settings.graylog_url, "poll_interval": self.settings.poll_interval_seconds, "last_poll": self.last_poll.isoformat() if self.last_poll else None, "events_today": count}
+        return {"graylog": self.graylog_status, "telegram": "configured" if self.telegram.configured else "not configured", "firewall_label": self.settings.firewall_label, "graylog_url": self.settings.graylog_url, "poll_interval": self.settings.poll_interval_seconds, "last_poll": self.last_poll.isoformat() if self.last_poll else None, "events_today": count}

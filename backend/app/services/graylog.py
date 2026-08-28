@@ -25,7 +25,7 @@ class GraylogClient:
         normalized = []
         for item in items:
             raw = item.get("message", item)
-            source = str(raw.get("source", raw.get("source_ip", "")))
+            source = str(raw.get("source", raw.get("source_ip", raw.get("host", ""))))
             normalized.append({"id": str(raw.get("gl2_message_id", raw.get("id", ""))), "timestamp": raw.get("timestamp", datetime.now(timezone.utc).isoformat()), "source": source, "message": str(raw.get("message", raw.get("full_message", ""))), "level": str(raw.get("level", "")), "facility": str(raw.get("facility", "")), "raw": raw})
         return normalized
 
@@ -34,5 +34,6 @@ class GraylogClient:
             return []
         self._mock_sent = True
         now = datetime.now(timezone.utc).isoformat()
-        message = "User admin executed the configuration command: access-list OUTSIDE extended permit tcp any any eq 443"
-        return [{"id": "mock-config-change-001", "timestamp": now, "source": self.settings.asa_ip, "message": message, "level": "warning", "facility": "local4", "raw": {"mock": True, "source": self.settings.asa_ip, "message": message}}]
+        source = "192.168.1.1"
+        message = "Administrator executed configuration command: allow HTTPS service"
+        return [{"id": "mock-firewall-config-change-001", "timestamp": now, "source": source, "message": message, "level": "warning", "facility": "local4", "raw": {"mock": True, "source": source, "message": message}}]

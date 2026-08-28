@@ -26,7 +26,7 @@ def event_detail(event_id: str):
 @router.post("/test/telegram")
 async def test_telegram(request: Request):
     try:
-        await request.app.state.monitor.telegram.send_alert(text="Test alert from ASA Config Monitor")
+        await request.app.state.monitor.telegram.send_alert(text="Test alert from Firewall Config Monitor")
         return {"status": "sent"}
     except Exception as exc:
         raise HTTPException(503, str(exc))
