@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/firewall_monitor.db"
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
-    enable_telegram: bool = True
+    telegram_enabled: bool = False
     mock_graylog: bool = False
     cors_origins: str = "http://localhost:5173"
 

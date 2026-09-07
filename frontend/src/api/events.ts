@@ -1,8 +1,8 @@
 import { apiClient } from "./client";
-import type { SecurityEvent, SecurityEventDetail } from "../types/event";
+import type { EventsPage, SecurityEventDetail } from "../types/event";
 
-export async function getEvents(): Promise<SecurityEvent[]> {
-  return (await apiClient.get<SecurityEvent[]>("/api/events")).data;
+export async function getEvents(): Promise<EventsPage> {
+  return (await apiClient.get<EventsPage>("/api/events")).data;
 }
 
 export async function getEvent(eventId: string): Promise<SecurityEventDetail> {

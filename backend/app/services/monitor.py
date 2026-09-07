@@ -16,6 +16,7 @@ class MonitorService:
         self.settings, self.graylog = settings, GraylogClient(settings)
         self.detector, self.telegram = ConfigChangeDetector(), TelegramService(settings)
         self.last_poll: datetime | None = None
+        self.last_message_at: datetime | None = None
         self.graylog_status = "unknown"
         self.running = False
 
@@ -37,7 +38,7 @@ class MonitorService:
         try:
             messages = await self.graylog.search(start, now)
             self.graylog_status = "connected"
-            logger.info("Retrieved %s Graylog messages", len(messages))
+            logger.info("Graylog connected; fetched %s messages", len(messages))
             for message in messages:
                 await self._process(message)
             self.last_poll = now
@@ -54,17 +55,39 @@ class MonitorService:
         with SessionLocal() as db:
             if db.scalar(select(SecurityEvent).where(SecurityEvent.fingerprint == fingerprint)):
                 return
-            event = SecurityEvent(event_id=item.get("id") or fingerprint, fingerprint=fingerprint, timestamp=timestamp, source_ip=item["source"], event_type=result.event_type, message=item.get("message", ""), severity=result.severity, raw_data=json.dumps(item.get("raw", {}), default=str))
+            fields = item.get("fields", item.get("raw", {}))
+            source = str(item.get("source", ""))
+            device_ip = self._field(fields, "device_ip", "source_ip", "_source_ip")
+            event = SecurityEvent(
+                event_id=item.get("id") or fingerprint,
+                graylog_message_id=item.get("id") or None,
+                fingerprint=fingerprint,
+                timestamp=timestamp,
+                source_ip=device_ip or source,
+                source=source,
+                device_name=self._field(fields, "device_name", "host", "hostname") or source,
+                device_ip=device_ip,
+                device_type=self._field(fields, "device_type", "_device_type") or "firewall",
+                event_type=result.event_type,
+                message=item.get("message", ""),
+                severity=result.severity,
+                detection_reason=result.reason,
+                matched_pattern=result.matched_pattern,
+                raw_data=json.dumps(item.get("raw", {}), default=str),
+            )
             db.add(event); db.commit(); db.refresh(event)
+            self.last_message_at = timestamp
             if self.telegram.configured:
                 try:
                     await self.telegram.send_alert(event=event)
                     event.telegram_sent = True
+                    event.telegram_sent_at = datetime.now(timezone.utc)
+                    logger.info("Telegram alert sent for event %s", event.event_id)
                 except Exception as exc:
                     event.telegram_error = str(exc)
                     logger.warning("Telegram alert failed: %s", exc)
                 db.commit()
-            logger.warning("Configuration change detected: %s", event.event_id)
+            logger.warning("Configuration change detected and saved: %s", event.event_id)
 
     @staticmethod
     def fingerprint_for(item: dict) -> str:
@@ -78,8 +101,25 @@ class MonitorService:
         try: return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError: return datetime.now(timezone.utc)
 
+    @staticmethod
+    def _field(fields: dict, *names: str) -> str | None:
+        for name in names:
+            value = fields.get(name)
+            if value not in (None, ""):
+                return str(value)
+        return None
+
+    async def test_graylog(self) -> None:
+        try:
+            await self.graylog.test_connection()
+            self.graylog_status = "connected"
+        except Exception:
+            self.graylog_status = "disconnected"
+            raise
+
     def status(self) -> dict:
         with SessionLocal() as db:
             today = datetime.now(timezone.utc).date()
-            count = db.scalar(select(func.count()).select_from(SecurityEvent).where(SecurityEvent.timestamp >= datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc))) or 0
-        return {"graylog": self.graylog_status, "telegram": "configured" if self.telegram.configured else "not configured", "firewall_label": self.settings.firewall_label, "graylog_url": self.settings.graylog_url, "poll_interval": self.settings.poll_interval_seconds, "last_poll": self.last_poll.isoformat() if self.last_poll else None, "events_today": count}
+            today_count = db.scalar(select(func.count()).select_from(SecurityEvent).where(SecurityEvent.timestamp >= datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc))) or 0
+            total_count = db.scalar(select(func.count()).select_from(SecurityEvent)) or 0
+        return {"status": "healthy", "graylog": self.graylog_status, "graylog_connected": self.graylog_status == "connected", "telegram": "enabled" if self.telegram.configured else "disabled", "telegram_enabled": self.telegram.configured, "polling": "running" if self.running else "stopped", "firewall_label": self.settings.firewall_label, "graylog_url": self.settings.graylog_url, "poll_interval": self.settings.poll_interval_seconds, "last_poll": self.last_poll.isoformat() if self.last_poll else None, "last_poll_at": self.last_poll.isoformat() if self.last_poll else None, "last_message_at": self.last_message_at.isoformat() if self.last_message_at else None, "events_today": today_count, "events_count": total_count}

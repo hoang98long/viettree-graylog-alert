@@ -20,13 +20,22 @@ class GraylogClient:
             response.raise_for_status()
             return self._normalize(response.json())
 
+    async def test_connection(self) -> None:
+        if self.settings.mock_graylog:
+            return
+        url = f"{self.settings.graylog_url.rstrip('/')}/api/system"
+        auth = (self.settings.graylog_username, self.settings.graylog_password) if self.settings.graylog_username else None
+        async with httpx.AsyncClient(verify=self.settings.graylog_verify_ssl, timeout=10.0, auth=auth) as client:
+            response = await client.get(url, headers={"Accept": "application/json"})
+            response.raise_for_status()
+
     def _normalize(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         items = payload.get("messages", payload.get("events", []))
         normalized = []
         for item in items:
             raw = item.get("message", item)
             source = str(raw.get("source", raw.get("source_ip", raw.get("host", ""))))
-            normalized.append({"id": str(raw.get("gl2_message_id", raw.get("id", ""))), "timestamp": raw.get("timestamp", datetime.now(timezone.utc).isoformat()), "source": source, "message": str(raw.get("message", raw.get("full_message", ""))), "level": str(raw.get("level", "")), "facility": str(raw.get("facility", "")), "raw": raw})
+            normalized.append({"id": str(raw.get("gl2_message_id", raw.get("id", ""))), "timestamp": raw.get("timestamp", datetime.now(timezone.utc).isoformat()), "source": source, "message": str(raw.get("message", raw.get("full_message", ""))), "level": str(raw.get("level", "")), "facility": str(raw.get("facility", "")), "fields": raw, "raw": raw})
         return normalized
 
     def _mock_messages(self) -> list[dict[str, Any]]:

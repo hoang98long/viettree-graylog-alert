@@ -1,21 +1,68 @@
 # Firewall Config Monitor
 
-MVP theo dõi thay đổi cấu hình cho nhiều loại tường lửa. Ứng dụng không kết nối trực tiếp tới thiết bị; mọi log đều đi qua Graylog.
+Local MVP theo dõi thay đổi cấu hình từ nhiều loại firewall. Ứng dụng không nhận log trực tiếp; Graylog là điểm nhận Syslog và FastAPI poll Graylog REST API.
 
 ```text
-Firewall / simulated GELF message → Graylog → FastAPI polling → SQLite / Telegram
-                                                    ↓ REST API
-                                             React + Vite + Tailwind
+PowerShell Syslog Simulator / Firewall
+              ↓ UDP 1514
+            Graylog
+              ↓ REST API polling
+ FastAPI → Detector → SQLite → Telegram
+              ↓
+       React dashboard
 ```
 
-## Architecture
+## Project structure
 
-- `backend/`: FastAPI, Graylog polling, detector theo pattern, SQLite, Telegram và tests.
-- `frontend/`: React 19, TypeScript, Vite, TailwindCSS, Axios, React Router, TanStack Query và Lucide icons.
-- `GRAYLOG_SEARCH_QUERY` chỉ chọn log đầu vào; detector quyết định log nào là thay đổi cấu hình. Giá trị mặc định `*` cho phép theo dõi nhiều firewall.
-- Docker frontend Nginx phục vụ SPA tại cổng `5173` và proxy `/api/*` đến `backend:8000`.
+```text
+backend/       FastAPI, Graylog client/poller, detector, SQLite, Telegram, tests
+frontend/      React + Vite + Tailwind dashboard
+scripts/       Windows Syslog UDP simulation scripts
+```
+
+## Prerequisites
+
+- Python 3.12+
+- Node.js 22+ and npm
+- Docker Desktop for Graylog and optional app containers
+- A running Graylog with a **Syslog UDP Input** listening on UDP port `1514`
+
+## Graylog configuration (Docker Desktop Windows)
+
+Your separate Graylog compose must publish the input port:
+
+```yaml
+ports:
+  - "9000:9000"
+  - "1514:1514/udp"
+```
+
+In Graylog Web UI at http://localhost:9000, open **System → Inputs**, launch a **Syslog UDP** input on port `1514`, then confirm it is running. This is Syslog UDP, not GELF.
+
+## Environment
+
+Copy `backend/.env.example` to `backend/.env` and configure only that file.
+
+```env
+# When backend runs directly on Windows
+GRAYLOG_URL=http://localhost:9000
+
+# Use a valid Graylog account
+GRAYLOG_USERNAME=admin
+GRAYLOG_PASSWORD=CHANGE_ME
+GRAYLOG_SEARCH_QUERY=*
+POLL_INTERVAL_SECONDS=5
+
+TELEGRAM_ENABLED=false
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+```
+
+When backend runs in this project's Docker Compose but Graylog runs in a separate Docker Desktop compose, use `GRAYLOG_URL=http://host.docker.internal:9000`. Do not use `localhost:9000` inside the backend container.
 
 ## Development
+
+Start backend:
 
 ```powershell
 Copy-Item backend/.env.example backend/.env
@@ -26,63 +73,77 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Terminal khác:
+Start frontend in another terminal:
 
-```bash
-cd frontend
+```powershell
+Set-Location frontend
 npm install
 npm run dev
 ```
 
-Mở http://localhost:5173; Swagger ở http://localhost:8000/docs. Điền URL, username/password Graylog trong `backend/.env`. Khi backend chạy trực tiếp trên Windows và Graylog compose publish `9000:9000`, dùng `GRAYLOG_URL=http://localhost:9000`. `MOCK_GRAYLOG=true` chỉ dành cho smoke test không có Graylog.
+Open http://localhost:5173. API documentation is available at http://localhost:8000/docs.
 
-## Demo: gửi log mô phỏng từ Windows đến Graylog
+## End-to-end Syslog test
 
-Compose Graylog bạn cung cấp hiện publish `12201/udp`, phù hợp **GELF UDP**. Trước tiên mở Graylog tại http://localhost:9000, vào **System / Inputs**, chọn **GELF UDP**, chọn node rồi bấm **Launch new input** với port `12201`.
-
-Giữ ứng dụng backend chạy, sau đó mở PowerShell và gửi một GELF message mô phỏng configuration change:
+1. Start Graylog and verify its Syslog UDP input is running on `1514`.
+2. Start backend and frontend.
+3. In the repository root, run:
 
 ```powershell
-$payload = @{ version = '1.1'; host = 'demo-firewall-01'; short_message = 'Administrator executed configuration change: created rule allow-https'; level = 4; _device_type = 'firewall'; _source_ip = '192.168.1.1' } | ConvertTo-Json -Compress
-$client = [System.Net.Sockets.UdpClient]::new()
-$bytes = [Text.Encoding]::UTF8.GetBytes($payload)
-[void]$client.Send($bytes, $bytes.Length, '127.0.0.1', 12201)
-$client.Dispose()
+powershell -ExecutionPolicy Bypass -File .\scripts\send-test-config-change.ps1
 ```
 
-Kiểm tra message trong Graylog Search. Trong tối đa một chu kỳ `POLL_INTERVAL_SECONDS` (mặc định 5 giây), FastAPI sẽ thấy log, detector nhận keyword `configuration change`, lưu event vào SQLite, gửi Telegram nếu cấu hình, rồi React dashboard tự refresh. Source trên giao diện thường là `demo-firewall-01`; field `_source_ip` còn trong Raw Graylog Data.
+The script sends this Syslog-compatible message to `127.0.0.1:1514`:
 
-Nếu muốn gửi Syslog UDP chuẩn thay vì GELF, hãy tạo **Syslog UDP input** trong Graylog và thêm một mapping UDP khác (ví dụ `5140:5140/udp`) vào compose Graylog; compose hiện tại chưa publish một cổng Syslog UDP chuẩn.
+```text
+<134>Aug 31 14:30:00 TEST-FIREWALL configuration change: created firewall rule allow-https
+```
 
-## Docker
+4. Confirm the message in Graylog Search.
+5. Within the polling interval (normally five seconds), the backend logs a detected configuration change, stores one event in SQLite and sends Telegram if enabled.
+6. Dashboard auto-refresh displays the event without a browser reload.
 
-```bash
-cp backend/.env.example backend/.env
+For a custom simulation:
+
+```powershell
+.\scripts\send-graylog.ps1 -Message "configuration change: updated outbound NAT rule"
+```
+
+## API
+
+- `GET /api/health`
+- `GET /api/status`
+- `GET /api/events?limit=50&offset=0` returns `{ items, total }`
+- `GET /api/events/{event_id}`
+- `POST /api/test/graylog`
+- `POST /api/test/telegram`
+
+## Docker application services
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+# Set GRAYLOG_URL=http://host.docker.internal:9000 in backend/.env
 docker compose build
 docker compose up -d
-docker compose ps
 ```
 
-Mở http://localhost:5173. Kiểm tra Nginx-to-FastAPI proxy tại http://localhost:5173/api/status; Swagger backend ở http://localhost:8000/docs. Docker frontend phải gọi `backend:8000`, không phải `localhost:8000`.
+The React/Nginx dashboard is http://localhost:5173; Nginx proxies `/api/*` to the backend container. The backend port is exposed at `8000` only for API/debug access. Graylog remains in its own compose project.
 
-Graylog của bạn chạy trong một compose riêng và publish cổng trên Windows host. Vì vậy trước khi chạy compose của ứng dụng này, đặt trong `backend/.env`:
+## Test commands
 
-```env
-GRAYLOG_URL=http://host.docker.internal:9000
+```powershell
+Set-Location backend
+pytest
+
+Set-Location ..\frontend
+npm run build
 ```
 
-`localhost:9000` bên trong container backend trỏ về chính container backend, không phải Graylog. `host.docker.internal` là hostname Docker Desktop dành cho Windows host.
+## Troubleshooting
 
-## Testing and troubleshooting
+- Graylog receives Syslog but no dashboard event: check FastAPI logs, Graylog credentials, `GRAYLOG_SEARCH_QUERY`, and whether the message contains a detection pattern such as `configuration change`.
+- Backend cannot reach Graylog in Docker: use `host.docker.internal:9000` and check Docker Desktop is running.
+- Syslog not received: confirm both the Docker UDP mapping and Graylog Syslog UDP input use `1514`.
+- Telegram fails: set `TELEGRAM_ENABLED=true`, token and chat ID in `backend/.env`. Failures do not stop polling or database storage.
 
-```bash
-cd backend && pytest
-cd frontend && npm run build
-```
-
-- Không thấy demo log trong Graylog: xác nhận GELF UDP input đang chạy và Docker Desktop publish `12201/udp`.
-- Graylog có log nhưng dashboard chưa có event: kiểm tra `GRAYLOG_SEARCH_QUERY`, endpoint/API credentials và nội dung log phải khớp pattern trong `backend/app/services/detector.py`.
-- Frontend không gọi backend: kiểm tra Vite proxy, backend port 8000 và `CORS_ORIGINS`.
-- Telegram lỗi: kiểm tra `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID`.
-
-Detector hiện dùng keyword/regex đơn giản để phù hợp demo. Khi có log thật từ từng vendor, bổ sung pattern có kiểm soát trong `ConfigChangeDetector`; không cần thay kiến trúc hay giới hạn hệ thống vào một loại firewall.
+Detection patterns live in `backend/app/services/detector.py`. Add vendor-specific patterns from actual logs there; the monitor itself is vendor-neutral.
